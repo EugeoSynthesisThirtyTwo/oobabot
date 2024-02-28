@@ -8,6 +8,8 @@ import json
 import re
 import time
 import typing
+import requests
+import sseclient  # pip install sseclient-py
 
 import aiohttp
 import pysbd
@@ -127,20 +129,22 @@ class SentenceSplitter(MessageSplitter):
             self.printed_idx += segments[-1].start  # type: ignore
 
 
-class OobaClient(http_client.SerializedHttpClient):
+class OobaClient:
     """
     Client for the Ooba API.  Can provide the response by token or by sentence.
     """
 
     SERVICE_NAME = "Oobabooga"
 
-    OOBABOOGA_STREAMING_URI_PATH: str = "/api/v1/stream"
+    OOBABOOGA_STREAMING_URI_PATH: str = "/v1/completions"
+    OOBABOOGA_HEADERS: dict[str, str] = {"Content-Type": "application/json"}
 
     def __init__(
         self,
         settings: typing.Dict[str, typing.Any],
     ):
-        super().__init__(self.SERVICE_NAME, settings["base_url"])
+        self.service_name = self.SERVICE_NAME
+        self.base_url = settings["base_url"]
         self.total_response_tokens = 0
         self.message_regex = settings["message_regex"]
         self.request_params = settings["request_params"]
@@ -150,6 +154,12 @@ class OobaClient(http_client.SerializedHttpClient):
             self.fn_new_splitter = lambda: RegexSplitter(self.message_regex)
         else:
             self.fn_new_splitter = SentenceSplitter
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *_err):
+        pass
 
     def on_ready(self):
         """
@@ -167,10 +177,6 @@ class OobaClient(http_client.SerializedHttpClient):
                 + "by English sentence.",
             )
 
-    async def _setup(self):
-        async with self._get_session().ws_connect(self.OOBABOOGA_STREAMING_URI_PATH):
-            return
-
     def get_stopping_strings(self) -> typing.List[str]:
         """
         Returns a list of strings that indicate the end of a response.
@@ -187,9 +193,6 @@ class OobaClient(http_client.SerializedHttpClient):
         splitter = self.fn_new_splitter()
         async for new_token in self.request_by_token(prompt):
             for sentence in splitter.next(new_token):
-                # remove "### Assistant: " from strings
-                if sentence.startswith("### Assistant: "):
-                    sentence = sentence[len("### Assistant: ") :]
                 yield sentence
 
     async def request_as_string(self, prompt: str) -> str:
@@ -221,6 +224,9 @@ class OobaClient(http_client.SerializedHttpClient):
             yield tokens
             tokens = ""
             last_response = time.perf_counter()
+    
+    def test_connection(self):
+        pass
 
     async def request_by_token(self, prompt: str) -> typing.AsyncIterator[str]:
         """
@@ -233,70 +239,48 @@ class OobaClient(http_client.SerializedHttpClient):
             "prompt": prompt,
         }
         request.update(self.request_params)
+        request["stream"] = True
 
-        async with self._get_session().ws_connect(
-            self.OOBABOOGA_STREAMING_URI_PATH
-        ) as websocket:
-            await websocket.send_json(request)
-            if self.log_all_the_things:
-                try:
-                    print(f"Sent request:\n{json.dumps(request, indent=1)}")
-                    print(f"Prompt:\n{str(request['prompt'])}")
-                except UnicodeEncodeError:
-                    print(
-                        "Sent request:\n"
-                        + f"{json.dumps(request, indent=1).encode('utf-8')}"
-                    )
-                    print(f"Prompt:\n{str(request['prompt']).encode('utf-8')}")
+        stream_response = requests.post(self.base_url + self.OOBABOOGA_STREAMING_URI_PATH, headers=self.OOBABOOGA_HEADERS, json=request, verify=False, stream=True)
+        client = sseclient.SSEClient(stream_response)
+        
+        if self.log_all_the_things:
+            try:
+                print(f"Sent request:\n{json.dumps(request, indent=1)}")
+                print(f"Prompt:\n{str(request['prompt'])}")
+            except UnicodeEncodeError:
+                print(
+                    "Sent request:\n"
+                    + f"{json.dumps(request, indent=1).encode('utf-8')}"
+                )
+                print(f"Prompt:\n{str(request['prompt']).encode('utf-8')}")
 
-            async for msg in websocket:
-                # we expect a series of text messages in JSON encoding,
-                # like this:
-                #
-                # {"event": "text_stream", "message_num": 0, "text": ""}
-                # {"event": "text_stream", "message_num": 1, "text": "Oh"}
-                # {"event": "text_stream", "message_num": 2, "text": ","}
-                # {"event": "text_stream", "message_num": 3, "text": " okay"}
-                # {"event": "text_stream", "message_num": 4, "text": "."}
-                # {"event": "stream_end", "message_num": 5}
-                if msg.type == aiohttp.WSMsgType.TEXT:
-                    # bdata = typing.cast(bytes, msg.data)
-                    # get_logger().debug(f"Received data: {bdata}")
+        for event in client.events():
+            payload = json.loads(event.data)
+            text = payload["choices"][0]["text"]
+            finish_reason = payload["choices"][0]["finish_reason"]
+            # we expect a series of text messages in JSON encoding,
+            # like this:
+            #
+            # text = ""
+            # text = "Oh"
+            # text = ","
+            # text = " okay"
+            # text = "."
+            
+            self.total_response_tokens += 1
+            if text != SentenceSplitter.END_OF_INPUT:
+                if self.log_all_the_things:
+                    try:
+                        print(text, end="", flush=True)
+                    except UnicodeEncodeError:
+                        print(text.encode("utf-8"), end="", flush=True)
 
-                    incoming_data = msg.json()
-                    if "text_stream" == incoming_data["event"]:
-                        self.total_response_tokens += 1
-                        text = incoming_data["text"]
-                        if text != SentenceSplitter.END_OF_INPUT:
-                            if self.log_all_the_things:
-                                try:
-                                    print(text, end="", flush=True)
-                                except UnicodeEncodeError:
-                                    print(text.encode("utf-8"), end="", flush=True)
+                yield text
 
-                            yield text
-
-                    elif "stream_end" == incoming_data["event"]:
-                        # Make sure any unprinted text is flushed.
-                        if self.log_all_the_things:
-                            print("", flush=True)
-                        yield SentenceSplitter.END_OF_INPUT
-                        return
-
-                    else:
-                        fancy_logger.get().warning(
-                            "Unexpected event: %s", incoming_data
-                        )
-
-                elif msg.type == aiohttp.WSMsgType.ERROR:
-                    fancy_logger.get().error(
-                        "WebSocket connection closed with error: %s", msg
-                    )
-                    raise http_client.OobaHttpClientError(
-                        f"WebSocket connection closed with error {msg}"
-                    )
-                elif msg.type == aiohttp.WSMsgType.CLOSED:
-                    fancy_logger.get().info(
-                        "WebSocket connection closed normally: %s", msg
-                    )
-                    return
+            if finish_reason is not None:
+                # Make sure any unprinted text is flushed.
+                if self.log_all_the_things:
+                    print("", flush=True)
+                yield SentenceSplitter.END_OF_INPUT
+                return

@@ -94,7 +94,7 @@ class Settings:
     REPETITION_TRACKER_THRESHOLD = 1
 
     OOBABOOGA_DEFAULT_REQUEST_PARAMS: oesp.SettingDictType = {
-        "max_new_tokens": 250,
+        "max_tokens": 250,
         "do_sample": True,
         "temperature": 1.3,
         "top_p": 0.1,

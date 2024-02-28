@@ -145,59 +145,57 @@ class TemplateStore:
     DEFAULT_TEMPLATES: typing.Dict[Templates, str] = {
         Templates.PROMPT: textwrap.dedent(
             """
-            You are in a chat room with multiple participants.
-            Below is a transcript of recent messages in the conversation.
-            Write the next one to three messages that you would send in this
-            conversation, from the point of view of the participant named
-            {AI_NAME}.
+            Tu est dans un salon textuel avec plusieurs participants.
+            Il y a ci-dessous une transcription des messages récents de la conversation.
+            Ecrit le prochain message que tu voudrais envoyer dans cette conversation, du point of view de {AI_NAME}.
 
             {PERSONA}
 
-            All responses you write must be from the point of view of
-            {AI_NAME}.
-            ### Transcript:
+            Toutes les réponses que tu écris doivent être du point de vue de {AI_NAME}.
+
+            ### Transcription:
             {MESSAGE_HISTORY}
             {IMAGE_COMING}
             """
         ),
         Templates.PROMPT_HISTORY_LINE: textwrap.dedent(
             """
-            {USER_NAME} says:
+            {USER_NAME}:
             {USER_MESSAGE}
 
             """
         ),
         Templates.PROMPT_IMAGE_COMING: textwrap.dedent(
             """
-            {AI_NAME}: is currently generating an image, as requested.
+            {AI_NAME}: est en train de générer une image comme demandé.
             """
         ),
         Templates.IMAGE_DETACH: textwrap.dedent(
             """
-            {USER_NAME} asked for an image with the prompt:
+            {USER_NAME} a demandé une image avec la description suivante:
                 '{IMAGE_PROMPT}'
-            ...but couldn't find a suitable one.
+            ...mais aucune image n'a pu être trouvée.
             """
         ),
         Templates.IMAGE_CONFIRMATION: textwrap.dedent(
             """
-            {USER_NAME}, is this what you wanted?
-            If no choice is made, this message will 💣 self-destruct 💣 in 3 minutes.
+            {USER_NAME}, est ce que c'est ce que tu voulais?
+            Si aucun choix n'est fait ce message va 💣 s'auto détruire 💣 dans 3 minutes.
             """
         ),
         Templates.IMAGE_GENERATION_ERROR: textwrap.dedent(
             """
-            Something went wrong generating your image.  Sorry about that!
+            Quelque chose s'est mal passé pendant la génération de l'image. Désolé !
             """
         ),
         Templates.IMAGE_UNAUTHORIZED: textwrap.dedent(
             """
-            Sorry, only {USER_NAME} can press the buttons.
+            Désolé, seul {USER_NAME} peut appuyer sur les boutons.
             """
         ),
         Templates.COMMAND_LOBOTOMIZE_RESPONSE: textwrap.dedent(
             """
-            Ummmm... what were we talking about?
+            Heuuu... de quoi on parlait déjà ?
             """
         ),
     }

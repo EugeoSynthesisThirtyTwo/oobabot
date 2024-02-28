@@ -590,7 +590,7 @@ class DiscordBot(discord.Client):
 
             # hack: abort response if it looks like the AI is
             # continuing the conversation as someone else
-            if line.endswith(" says:"):
+            if line.endswith(":"):
                 fancy_logger.get().warning(
                     'Filtered out "%s" from response, aborting', line
                 )
